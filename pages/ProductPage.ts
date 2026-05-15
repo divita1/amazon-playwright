@@ -1,5 +1,6 @@
 import { Page } from '@playwright/test'
 import { ProductLocators } from '@/properties/product.locators'
+import { healClick } from '@/utils/heal-actions'
 
 export class ProductPage {
     constructor(private page: Page) {}
@@ -9,6 +10,6 @@ export class ProductPage {
     }
 
     async addToCart() {
-        await this.page.click(ProductLocators.addToCartButton)
+        await healClick(this.page, ProductLocators.addToCartButton, 'addToCart')
     }
 }

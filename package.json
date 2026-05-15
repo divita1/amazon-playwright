@@ -20,5 +20,8 @@
     "@types/node": "^25.8.0",
     "dotenv": "^17.4.2",
     "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0"
   }
 }

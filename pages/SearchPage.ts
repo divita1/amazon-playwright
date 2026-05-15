@@ -1,6 +1,7 @@
 import { Page } from '@playwright/test'
 import { SearchLocators } from '@/properties/search.locators'
 import { amazonTenant } from '@/config/tenants/amazon.tenant'
+import { healClick, healFill } from '@/utils/heal-actions'
 
 export class SearchPage {
     constructor(private page: Page) {}
@@ -10,11 +11,11 @@ export class SearchPage {
     }
 
     async search(keyword: string) {
-        await this.page.fill(SearchLocators.searchBox, keyword)
-        await this.page.click(SearchLocators.searchButton)
+        await healFill(this.page, SearchLocators.searchBox, keyword, 'search')
+        await healClick(this.page, SearchLocators.searchButton, 'search')
     }
 
     async selectFirstResult() {
-        await this.page.locator(SearchLocators.firstResult).first().click()
+        await healClick(this.page, SearchLocators.firstResult, 'selectFirstResult')
     }
 }
