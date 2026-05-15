@@ -1,0 +1,20 @@
+import { defineConfig } from '@playwright/test'
+import * as dotenv from 'dotenv'
+dotenv.config()
+
+export default defineConfig({
+    testDir: './tests',
+    timeout: 60_000,
+    use: {
+        headless: false,
+        viewport: { width: 1280, height: 720 },
+        screenshot: 'only-on-failure',
+    },
+    projects: [
+        {
+            name: 'chromium',
+            use: { browserName: 'chromium' },
+        },
+    ],
+    reporter: [['html', { outputFolder: 'test-reports/html' }]],
+})
