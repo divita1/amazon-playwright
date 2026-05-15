@@ -1,4 +1,4 @@
-import { execSync, spawnSync } from 'child_process'
+import { spawnSync } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 
@@ -15,118 +15,121 @@ export type TestFailure = {
     screenshotPath: string | null
 }
 
+const JSON_REPORT_PATH = path.join(__dirname, '../test-results/agent-results.json')
+
 export function runTests(projectRoot: string): TestResult {
-    const resultsDir = path.join(projectRoot, 'test-results')
-    const jsonReport = path.join(projectRoot, 'test-results', 'results.json')
+    // Clean previous report
+    if (fs.existsSync(JSON_REPORT_PATH)) fs.unlinkSync(JSON_REPORT_PATH)
 
     const result = spawnSync(
         'npx',
-        ['playwright', 'test', '--reporter=json'],
+        ['playwright', 'test', `--reporter=json`],
         {
             cwd: projectRoot,
             encoding: 'utf-8',
-            env: { ...process.env },
+            env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_NAME: 'test-results/agent-results.json' },
             timeout: 300_000,
         }
     )
 
-    const output = result.stdout + result.stderr
-
-    // Parse failures from output since JSON reporter writes to stdout
-    const failures: TestFailure[] = []
-    const lines = output.split('\n')
-
-    let currentTest = ''
-    let currentError = ''
-    let capture = false
-
-    for (const line of lines) {
-        if (line.includes('›') && line.includes('──')) {
-            currentTest = line.replace(/.*›/, '').replace(/──.*/, '').trim()
-            capture = true
-            currentError = ''
-        } else if (capture && line.trim().startsWith('at ')) {
-            capture = false
-            if (currentTest && currentError) {
-                const screenshot = findScreenshot(resultsDir, currentTest)
-                failures.push({
-                    testName: currentTest,
-                    testFile: extractTestFile(lines, currentTest),
-                    error: currentError.trim(),
-                    screenshotPath: screenshot,
-                })
-            }
-        } else if (capture) {
-            currentError += line + '\n'
-        }
-    }
-
-    const passedMatch = output.match(/(\d+) passed/)
-    const failedMatch = output.match(/(\d+) failed/)
-
-    return {
-        passed: passedMatch ? parseInt(passedMatch[1]) : 0,
-        failed: failedMatch ? parseInt(failedMatch[1]) : failures.length,
-        failures,
-    }
+    return parseResults(projectRoot, result.stdout + result.stderr)
 }
 
 export function runSingleTest(projectRoot: string, testFile: string): TestResult {
+    if (fs.existsSync(JSON_REPORT_PATH)) fs.unlinkSync(JSON_REPORT_PATH)
+
     const result = spawnSync(
         'npx',
-        ['playwright', 'test', testFile, '--reporter=line'],
+        ['playwright', 'test', testFile, '--reporter=json'],
         {
             cwd: projectRoot,
             encoding: 'utf-8',
-            env: { ...process.env },
+            env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_NAME: 'test-results/agent-results.json' },
             timeout: 180_000,
         }
     )
 
-    const output = result.stdout + result.stderr
+    return parseResults(projectRoot, result.stdout + result.stderr)
+}
+
+function parseResults(projectRoot: string, output: string): TestResult {
     const failures: TestFailure[] = []
 
-    if (result.status !== 0) {
-        const errorMatch = output.match(/Error:([^\n]+(?:\n(?!\s+at\s).*)*)/m)
-        const errorMsg = errorMatch ? errorMatch[0].trim() : output.slice(0, 500)
+    // Try JSON report file first
+    if (fs.existsSync(JSON_REPORT_PATH)) {
+        try {
+            const json = JSON.parse(fs.readFileSync(JSON_REPORT_PATH, 'utf-8'))
+            const passed = json.stats?.expected ?? 0
+            const failed = json.stats?.unexpected ?? 0
 
-        const resultsDir = path.join(projectRoot, 'test-results')
-        const screenshot = findScreenshot(resultsDir, testFile)
+            for (const suite of json.suites ?? []) {
+                collectFailures(suite, failures, projectRoot)
+            }
 
-        failures.push({
-            testName: testFile,
-            testFile,
-            error: errorMsg,
-            screenshotPath: screenshot,
-        })
+            return { passed, failed, failures }
+        } catch {
+            // Fall through to text parsing
+        }
     }
 
+    // Fallback — parse text output
     const passedMatch = output.match(/(\d+) passed/)
-    return {
-        passed: result.status === 0 ? 1 : (passedMatch ? parseInt(passedMatch[1]) : 0),
-        failed: result.status !== 0 ? 1 : 0,
-        failures,
+    const failedMatch = output.match(/(\d+) failed/)
+    const passed = passedMatch ? parseInt(passedMatch[1]) : 0
+    const failed = failedMatch ? parseInt(failedMatch[1]) : 0
+
+    if (failed > 0) {
+        const errorBlocks = output.split(/\d+\) /).slice(1)
+        for (const block of errorBlocks) {
+            const lines = block.split('\n')
+            const testName = lines[0]?.trim() ?? 'unknown'
+            const errorLine = lines.find(l => l.trim().startsWith('Error:') || l.trim().startsWith('TimeoutError:'))
+            const specMatch = block.match(/tests\/[^\s:]+\.spec\.ts/)
+
+            failures.push({
+                testName,
+                testFile: specMatch ? specMatch[0] : 'tests/amazon/amazon-cart.spec.ts',
+                error: errorLine ?? block.slice(0, 300),
+                screenshotPath: findScreenshot(path.join(projectRoot, 'test-results')),
+            })
+        }
+    }
+
+    return { passed, failed, failures }
+}
+
+function collectFailures(suite: any, failures: TestFailure[], projectRoot: string): void {
+    for (const spec of suite.specs ?? []) {
+        for (const test of spec.tests ?? []) {
+            for (const result of test.results ?? []) {
+                if (result.status === 'failed' || result.status === 'timedOut') {
+                    const errorMsg = result.errors?.map((e: any) => e.message).join('\n') ?? 'Unknown error'
+                    const screenshotAttachment = result.attachments?.find((a: any) => a.name === 'screenshot')
+
+                    failures.push({
+                        testName: spec.title,
+                        testFile: suite.file ?? 'tests/amazon/amazon-cart.spec.ts',
+                        error: errorMsg,
+                        screenshotPath: screenshotAttachment?.path ?? findScreenshot(path.join(projectRoot, 'test-results')),
+                    })
+                }
+            }
+        }
+    }
+
+    for (const child of suite.suites ?? []) {
+        collectFailures(child, failures, projectRoot)
     }
 }
 
-function findScreenshot(resultsDir: string, testName: string): string | null {
+function findScreenshot(resultsDir: string): string | null {
     if (!fs.existsSync(resultsDir)) return null
     const entries = fs.readdirSync(resultsDir, { withFileTypes: true })
     for (const entry of entries) {
         if (entry.isDirectory()) {
-            const screenshotPath = path.join(resultsDir, entry.name, 'test-failed-1.png')
-            if (fs.existsSync(screenshotPath)) return screenshotPath
+            const p = path.join(resultsDir, entry.name, 'test-failed-1.png')
+            if (fs.existsSync(p)) return p
         }
     }
     return null
-}
-
-function extractTestFile(lines: string[], testName: string): string {
-    for (const line of lines) {
-        if (line.includes('.spec.ts') && line.includes('›')) {
-            const match = line.match(/tests\/[^\s]+\.spec\.ts/)
-            if (match) return match[0]
-        }
-    }
-    return 'tests/amazon/amazon-cart.spec.ts'
 }

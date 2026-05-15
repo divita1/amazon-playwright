@@ -3,7 +3,11 @@ import { SearchLocators } from '@/properties/search.locators'
 import { amazonTenant } from '@/config/tenants/amazon.tenant'
 
 export class SearchPage {
-    constructor(private page: Page) {}
+    readonly page: Page
+
+    constructor(page: Page) {
+        this.page = page
+    }
 
     async navigate() {
         await this.page.goto(amazonTenant.url)
@@ -14,42 +18,38 @@ export class SearchPage {
         await this.page.waitForSelector(SearchLocators.searchBox, { timeout: 15_000 })
         await this.page.fill(SearchLocators.searchBox, keyword)
         await this.page.click(SearchLocators.searchButton)
-        // Wait for results page to load fully
-        await this.page.waitForLoadState('domcontentloaded')
-        await this.page.waitForTimeout(2000)
-        // Scroll down slowly like a human scanning the page
-        await this.scrollToLoadResults()
+        await this.page.waitForLoadState('networkidle', { timeout: 30_000 })
     }
 
     async hasResults(): Promise<boolean> {
         try {
-            await this.page.waitForSelector(SearchLocators.firstResult, { timeout: 15_000 })
-            return true
+            await this.page.waitForSelector(SearchLocators.resultItem, { timeout: 15_000 })
+            const count = await this.page.locator(SearchLocators.resultItem).count()
+            return count > 0
         } catch {
             return false
         }
     }
 
     async selectFirstResult() {
-        await this.scrollToLoadResults()
-        await this.page.locator(SearchLocators.firstResult).first().scrollIntoViewIfNeeded()
-        await this.page.locator(SearchLocators.firstResult).first().click()
+        await this.page.waitForSelector(SearchLocators.resultItem, { timeout: 15_000 })
+        // Get the first result link and click it directly — no scroll loop needed
+        const firstLink = this.page.locator(SearchLocators.firstResultLink).first()
+        await firstLink.waitFor({ state: 'visible', timeout: 15_000 })
+        await firstLink.click()
         await this.page.waitForLoadState('domcontentloaded')
     }
 
     async findProductByName(productName: string): Promise<boolean> {
         try {
-            await this.page.waitForSelector(SearchLocators.firstResult, { timeout: 15_000 })
-            await this.scrollToLoadResults()
-
-            const results = this.page.locator(SearchLocators.firstResult)
-            const count = await results.count()
+            await this.page.waitForSelector(SearchLocators.resultItem, { timeout: 15_000 })
+            const links = this.page.locator(SearchLocators.firstResultLink)
+            const count = await links.count()
 
             for (let i = 0; i < count; i++) {
-                const text = await results.nth(i).innerText()
+                const text = await links.nth(i).innerText()
                 if (text.toLowerCase().includes(productName.toLowerCase())) {
-                    await results.nth(i).scrollIntoViewIfNeeded()
-                    await results.nth(i).click()
+                    await links.nth(i).click()
                     await this.page.waitForLoadState('domcontentloaded')
                     return true
                 }
@@ -58,18 +58,5 @@ export class SearchPage {
         } catch {
             return false
         }
-    }
-
-    private async scrollToLoadResults(): Promise<void> {
-        // Scroll in steps like a human — gives lazy-loaded content time to appear
-        for (let i = 1; i <= 5; i++) {
-            await this.page.evaluate((step) => {
-                window.scrollBy(0, window.innerHeight * step * 0.4)
-            }, i)
-            await this.page.waitForTimeout(500)
-        }
-        // Scroll back to top so first result is visible
-        await this.page.evaluate(() => window.scrollTo(0, 0))
-        await this.page.waitForTimeout(300)
     }
 }
