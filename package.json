@@ -9,7 +9,9 @@
   "scripts": {
     "test": "playwright test",
     "test:headed": "playwright test --headed",
-    "report": "playwright show-report test-reports/html"
+    "report": "playwright show-report test-reports/html",
+    "save-session": "npx ts-node -r tsconfig-paths/register scripts/save-session.ts",
+    "run": "npx ts-node -r tsconfig-paths/register scripts/qa-agent.ts"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +21,8 @@
     "@playwright/test": "^1.60.0",
     "@types/node": "^25.8.0",
     "dotenv": "^17.4.2",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^6.0.3"
   },
   "dependencies": {

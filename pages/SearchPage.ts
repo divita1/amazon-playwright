@@ -16,6 +16,6 @@ export class SearchPage {
     }
 
     async selectFirstResult() {
-        await healClick(this.page, SearchLocators.firstResult, 'selectFirstResult')
+        await this.page.locator(SearchLocators.firstResult).first().click()
     }
 }

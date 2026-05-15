@@ -4,11 +4,14 @@ dotenv.config()
 
 export default defineConfig({
     testDir: './tests',
-    timeout: 60_000,
+    timeout: 120_000,
     use: {
         headless: false,
         viewport: { width: 1280, height: 720 },
         screenshot: 'only-on-failure',
+        launchOptions: {
+            slowMo: 300,
+        },
     },
     projects: [
         {
