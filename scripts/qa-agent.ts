@@ -7,6 +7,7 @@ import { runTests, runSingleTest } from '../utils/test-runner'
 import { diagnoseFailure, writeLog } from '../utils/ai-healer'
 import { validateFix } from '../utils/fix-validator'
 import { initGitBranch, commitFix, pushBranch, hasChanges, AgentFix } from '../utils/git-manager'
+import { profileExists, saveSession } from './save-session'
 
 const PROJECT_ROOT = path.join(__dirname, '..')
 const MAX_RETRIES = 3
@@ -37,6 +38,13 @@ async function run(): Promise<void> {
     console.log('╚══════════════════════════════════════════╝\n')
 
     writeLog({ event: 'agent_start', projectRoot: PROJECT_ROOT })
+
+    // Step 0 — Ensure browser session exists
+    if (!profileExists()) {
+        await saveSession()
+    } else {
+        console.log('✔ Browser session found.\n')
+    }
 
     const report: AgentReport = {
         totalTests: 0,

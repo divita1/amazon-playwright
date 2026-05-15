@@ -1,30 +1,34 @@
 import { chromium } from '@playwright/test'
 import * as path from 'path'
+import * as fs from 'fs'
 import * as dotenv from 'dotenv'
 dotenv.config()
 
-async function saveSession() {
-    const profilePath = path.join(__dirname, '../.browser-profile')
+const PROFILE_PATH = path.join(__dirname, '../.browser-profile')
+const AMAZON_URL = process.env.AMAZON_URL ?? 'https://www.amazon.in'
 
-    const browser = await chromium.launchPersistentContext(profilePath, {
+export function profileExists(): boolean {
+    return fs.existsSync(PROFILE_PATH) && fs.readdirSync(PROFILE_PATH).length > 0
+}
+
+export async function saveSession(): Promise<void> {
+    console.log('\n► No browser session found. Opening browser for login...')
+    console.log('► Please log in to Amazon.in in the browser that opens.')
+    console.log('► Once logged in and you see your account name, press Enter here.\n')
+
+    const browser = await chromium.launchPersistentContext(PROFILE_PATH, {
         headless: false,
         viewport: { width: 1280, height: 720 },
         slowMo: 300,
     })
 
     const page = await browser.newPage()
-    await page.goto('https://www.amazon.in')
-
-    console.log('\n✅ Browser opened.')
-    console.log('👉 Please log in to Amazon.in manually in the browser.')
-    console.log('👉 Once you are logged in and see your account name, come back here and press Enter.\n')
+    await page.goto(AMAZON_URL)
 
     await new Promise<void>((resolve) => {
         process.stdin.once('data', () => resolve())
     })
 
     await browser.close()
-    console.log('✅ Session saved! Your tests will now reuse this login.')
+    console.log('✅ Session saved. Continuing...\n')
 }
-
-saveSession()
